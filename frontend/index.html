@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>一日行程规划 - 让旅行更简单</title>
+    <meta name="description" content="智能一日游行程规划，自动搜索小红书和大众点评，为您规划完美的一天">
+    
+    <!-- 高德地图 -->
+    <script src="https://webapi.amap.com/maps?v=2.0&key=1e44e94d288cd8321443dfa51fbb02f2"></script>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 头部 -->
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon">🗺️</span>
+                <span class="logo-text">一日行程规划</span>
+            </div>
+            <p class="tagline">AI驱动 · 智能推荐 · 完美行程</p>
+        </header>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <!-- 左侧面板 -->
+            <aside class="left-panel">
+                <!-- 搜索表单 -->
+                <section class="search-section">
+                    <h2>📍 目的地</h2>
+                    <form id="searchForm" class="search-form">
+                        <div class="input-group">
+                            <input 
+                                type="text" 
+                                id="locationInput" 
+                                placeholder="输入目的地，如：杭州西湖" 
+                                required
+                            >
+                            <button type="submit" class="btn-primary" id="searchBtn">
+                                <span class="btn-text">开始规划</span>
+                                <span class="btn-loading" style="display: none;">
+                                    <span class="spinner"></span>
+                                    规划中...
+                                </span>
+                            </button>
+                        </div>
+                        <div class="options">
+                            <label>
+                                <span>出发时间:</span>
+                                <input type="time" id="startTime" value="09:00">
+                            </label>
+                        </div>
+                    </form>
+                </section>
+
+                <!-- 状态信息 -->
+                <section class="status-section" id="statusSection" style="display: none;">
+                    <h2>🔄 处理进度</h2>
+                    <div class="status-messages" id="statusMessages"></div>
+                </section>
+
+                <!-- 地点列表 -->
+                <section class="places-section" id="placesSection" style="display: none;">
+                    <h2>📌 发现的地点 (<span id="placeCount">0</span>)</h2>
+                    <div class="places-list" id="placesList"></div>
+                </section>
+            </aside>
+
+            <!-- 右侧地图和行程 -->
+            <div class="right-panel">
+                <!-- 地图区域 -->
+                <div class="map-container" id="mapContainer">
+                    <div class="map-placeholder">
+                        <span class="placeholder-icon">🗺️</span>
+                        <p>输入目的地后，地图将显示推荐地点</p>
+                    </div>
+                </div>
+
+                <!-- 行程时间轴 -->
+                <section class="timeline-section" id="timelineSection" style="display: none;">
+                    <h2>📋 推荐行程</h2>
+                    <div class="timeline" id="timeline"></div>
+                    <div class="trip-summary" id="tripSummary"></div>
+                </section>
+            </div>
+        </main>
+
+        <!-- 底部 -->
+        <footer class="footer">
+            <p>数据来源: 小红书 · 大众点评 · 高德地图</p>
+        </footer>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/map.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
