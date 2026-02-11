@@ -31,12 +31,12 @@ class TripPlannerState(TypedDict):
 
 
 async def xiaohongshu_node(state: TripPlannerState) -> TripPlannerState:
-    """小红书搜索节点 - 获取热门推荐"""
+    """小红书搜索节点 - 爬虫获取数据 + LLM 分析内容"""
     location = state["location"]
     messages = list(state.get("messages", []))
     places = list(state.get("places", []))
     
-    messages.append(f"🔍 正在小红书搜索: {location} 一日游推荐...")
+    messages.append(f"🔍 正在通过 Spider_XHS 爬虫搜索: {location} 一日游推荐...")
     
     try:
         # 搜索景点和美食
@@ -46,10 +46,40 @@ async def xiaohongshu_node(state: TripPlannerState) -> TripPlannerState:
             f"{location}必去景点",
         ]
         
+        all_notes = []
         for keyword in keywords:
-            results = await xiaohongshu_scraper.search(keyword, max_results=5)
-            places.extend(results)
-            messages.append(f"  ✅ 搜索'{keyword}'找到 {len(results)} 条结果")
+            try:
+                results = await xiaohongshu_scraper.search(keyword, max_results=5)
+                all_notes.extend(results)
+                messages.append(f"  ✅ 搜索'{keyword}'找到 {len(results)} 条结果")
+            except Exception as e:
+                messages.append(f"  ⚠️ 搜索'{keyword}'失败: {str(e)}")
+        
+        if all_notes:
+            # 使用 LLM SubAgent 分析爬虫获取的笔记数据
+            messages.append(f"🤖 LLM SubAgent 正在分析 {len(all_notes)} 条笔记内容...")
+            analyzed_places = await llm_service.analyze_xhs_notes(all_notes, location)
+            
+            if analyzed_places:
+                messages.append(f"  ✅ LLM 从笔记中提取了 {len(analyzed_places)} 个地点")
+                
+                # 合并爬虫数据和 LLM 分析结果
+                for ap in analyzed_places:
+                    place = {
+                        "name": ap.get("name", ""),
+                        "category": ap.get("category", "景点"),
+                        "description": ap.get("description", ""),
+                        "source": "xiaohongshu",
+                        "popularity_hint": ap.get("popularity_hint", ""),
+                        "tips": ap.get("tips", ""),
+                    }
+                    places.append(place)
+            
+            # 同时保留爬虫直接获取的数据（作为补充）
+            for note in all_notes:
+                name = note.get("name", "")
+                if name and name not in {p.get("name") for p in places}:
+                    places.append(note)
         
         # 去重
         seen_names = set()

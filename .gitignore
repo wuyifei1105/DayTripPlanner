@@ -38,8 +38,10 @@ env/
 .env.local
 .env.*.local
 
-# Playwright Browser Data (contains login sessions)
+# Browser data / Spider data
 backend/browser_data/
+backend/spider_xhs/datas/
+
 
 # Logs
 *.log

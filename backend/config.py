@@ -16,11 +16,12 @@ class Settings(BaseSettings):
     # 高德地图API配置
     amap_api_key: str = os.getenv("AMAP_API_KEY", "")
     
-    # 浏览器数据目录
-    browser_data_dir: str = os.getenv("BROWSER_DATA_DIR", "./browser_data")
+    # 小红书 Cookie（从浏览器 F12 获取登录后的 cookie）
+    xhs_cookies: str = os.getenv("XHS_COOKIES", "")
     
     class Config:
         env_file = ".env"
 
 
 settings = Settings()
+

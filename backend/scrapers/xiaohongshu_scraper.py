@@ -1,25 +1,28 @@
-"""小红书数据抓取器"""
+"""小红书数据抓取器 - 基于 Spider_XHS API 爬虫（替代 Playwright 浏览器自动化）"""
 import asyncio
+import time
 import re
 from typing import List, Dict, Any
-from urllib.parse import quote
-from playwright.async_api import Page
-from .browser_manager import browser_manager
+from loguru import logger
+from config import settings
+from spider_xhs.apis.xhs_pc_apis import XHS_Apis
+from spider_xhs.xhs_utils.data_util import handle_note_info
 
 
 class XiaohongshuScraper:
-    """小红书笔记抓取器"""
+    """小红书笔记抓取器（API 爬虫版）"""
     
     def __init__(self):
         self.platform = "xiaohongshu"
-        self.base_url = "https://www.xiaohongshu.com"
+        self.xhs_apis = XHS_Apis()
     
-    async def ensure_login(self) -> bool:
-        """确保已登录"""
-        is_logged_in = await browser_manager.check_login_status(self.platform)
-        if not is_logged_in:
-            return await browser_manager.prompt_login(self.platform)
-        return True
+    @property
+    def cookies_str(self) -> str:
+        """获取 cookie 字符串"""
+        cookie = settings.xhs_cookies
+        if not cookie:
+            raise Exception("请在 .env 文件中配置 XHS_COOKIES（从浏览器 F12 获取小红书登录 cookie）")
+        return cookie
     
     async def search(self, keyword: str, max_results: int = 10) -> List[Dict[str, Any]]:
         """搜索笔记并提取地点信息
@@ -34,100 +37,132 @@ class XiaohongshuScraper:
         Raises:
             Exception: 如果搜索失败
         """
-        # 确保已登录
-        if not await self.ensure_login():
-            raise Exception("请先登录小红书后再试")
+        logger.info(f"🔍 Spider_XHS 搜索: {keyword}, 最多 {max_results} 条")
         
-        page = await browser_manager.get_page(self.platform, headless=True)
+        # 1. 搜索笔记列表（同步调用放到线程池中避免阻塞事件循环）
+        loop = asyncio.get_event_loop()
+        success, msg, notes = await loop.run_in_executor(
+            None,
+            lambda: self.xhs_apis.search_some_note(
+                query=keyword,
+                require_num=max_results,
+                cookies_str=self.cookies_str,
+                sort_type_choice=0,  # 综合排序
+                note_type=2,  # 仅图文笔记（旅行攻略通常是图文）
+            )
+        )
         
-        # 访问搜索页面 - 对关键词进行 URL 编码
-        encoded_keyword = quote(keyword)
-        search_url = f"{self.base_url}/search_result?keyword={encoded_keyword}&source=web_search_result_notes"
-        await page.goto(search_url, wait_until="domcontentloaded")
-        await asyncio.sleep(3)
+        if not success:
+            logger.error(f"搜索失败: {msg}")
+            raise Exception(f"小红书搜索失败: {msg}")
         
-        # 等待笔记卡片加载
-        await page.wait_for_selector(".note-item, .search-result-item", timeout=10000)
+        # 过滤出笔记类型的结果
+        notes = [n for n in notes if n.get('model_type') == 'note']
+        logger.info(f"📋 搜索到 {len(notes)} 篇笔记")
         
-        # 滚动加载更多
-        for _ in range(2):
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            await asyncio.sleep(1)
-        
-        # 提取笔记信息
-        notes = await self._extract_notes(page, max_results)
-        return notes
-    
-    async def _extract_notes(self, page: Page, max_results: int) -> List[Dict[str, Any]]:
-        """从页面提取笔记信息"""
+        # 2. 获取每个笔记的详细信息
         results = []
-        
-        # 尝试多种选择器
-        note_cards = await page.query_selector_all("section.note-item, div[data-note-id]")
-        
-        for i, card in enumerate(note_cards[:max_results]):
+        for note in notes[:max_results]:
             try:
-                # 提取标题
-                title_el = await card.query_selector(".title, h3, .note-title")
-                title = await title_el.inner_text() if title_el else ""
+                note_id = note.get('id', '')
+                xsec_token = note.get('xsec_token', '')
+                note_url = f"https://www.xiaohongshu.com/explore/{note_id}?xsec_token={xsec_token}&xsec_source=pc_search"
                 
-                # 提取描述/摘要
-                desc_el = await card.query_selector(".desc, .note-desc, p")
-                desc = await desc_el.inner_text() if desc_el else ""
+                # 获取笔记详情
+                detail_success, detail_msg, detail_json = await loop.run_in_executor(
+                    None,
+                    lambda url=note_url: self.xhs_apis.get_note_info(url, self.cookies_str)
+                )
                 
-                # 提取点赞数
-                like_el = await card.query_selector(".like-count, .count, span[class*='like']")
-                likes_text = await like_el.inner_text() if like_el else "0"
-                likes = self._parse_count(likes_text)
-                
-                # 提取链接
-                link_el = await card.query_selector("a")
-                href = await link_el.get_attribute("href") if link_el else ""
-                note_url = f"{self.base_url}{href}" if href and not href.startswith("http") else href
-                
-                # 判断类别
-                category = self._guess_category(title + " " + desc)
-                
-                if title:
-                    results.append({
-                        "name": self._extract_place_name(title),
-                        "title": title,
-                        "description": desc[:200] if desc else "",
-                        "likes": likes,
-                        "note_url": note_url,
-                        "category": category,
-                        "source": "xiaohongshu",
-                    })
+                if detail_success and detail_json:
+                    note_data = detail_json['data']['items'][0]
+                    note_data['url'] = note_url
+                    note_info = handle_note_info(note_data)
                     
+                    # 转换为 DayTripPlanner 格式
+                    result = self._convert_to_place_info(note_info)
+                    if result:
+                        results.append(result)
+                        logger.info(f"  ✅ {result['title'][:30]}...")
+                else:
+                    logger.warning(f"  ❌ 获取笔记详情失败: {detail_msg}")
+                
+                # 避免请求过快
+                await asyncio.sleep(0.5)
+                
             except Exception as e:
-                print(f"提取笔记信息失败: {e}")
+                logger.warning(f"  ❌ 处理笔记失败: {e}")
                 continue
         
+        logger.info(f"📍 共获取 {len(results)} 条有效结果")
         return results
     
-    def _parse_count(self, text: str) -> int:
-        """解析数量文本（如 1.2万 -> 12000）"""
-        text = text.strip()
-        if not text:
-            return 0
+    def _convert_to_place_info(self, note_info: dict) -> Dict[str, Any]:
+        """将爬虫获取的笔记信息转换为 DayTripPlanner 的地点格式
         
-        try:
-            if "万" in text:
-                num = float(text.replace("万", ""))
-                return int(num * 10000)
-            elif "k" in text.lower():
-                num = float(text.lower().replace("k", ""))
-                return int(num * 1000)
-            else:
-                return int(re.sub(r"[^\d]", "", text) or 0)
-        except:
-            return 0
+        Args:
+            note_info: handle_note_info 处理后的笔记信息
+        
+        Returns:
+            格式化的地点信息字典
+        """
+        title = note_info.get('title', '')
+        desc = note_info.get('desc', '')
+        
+        if not title:
+            return None
+        
+        # 从标题提取地点名称
+        place_name = self._extract_place_name(title)
+        
+        # 猜测类别
+        category = self._guess_category(title + " " + desc)
+        
+        # 解析互动数据
+        likes = self._safe_int(note_info.get('liked_count', 0))
+        collected = self._safe_int(note_info.get('collected_count', 0))
+        comments = self._safe_int(note_info.get('comment_count', 0))
+        
+        return {
+            "name": place_name,
+            "title": title,
+            "description": desc[:500] if desc else "",
+            "likes": likes,
+            "collected": collected,
+            "comments": comments,
+            "note_url": note_info.get('note_url', ''),
+            "category": category,
+            "source": "xiaohongshu",
+            "tags": note_info.get('tags', []),
+            "images": note_info.get('image_list', [])[:3],  # 最多保留3张图
+            "author": note_info.get('nickname', ''),
+            "upload_time": note_info.get('upload_time', ''),
+        }
+    
+    def _safe_int(self, value) -> int:
+        """安全转换为整数"""
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return 0
+            try:
+                if "万" in text:
+                    return int(float(text.replace("万", "")) * 10000)
+                elif "k" in text.lower():
+                    return int(float(text.lower().replace("k", "")) * 1000)
+                else:
+                    return int(re.sub(r"[^\d]", "", text) or 0)
+            except:
+                return 0
+        return 0
     
     def _guess_category(self, text: str) -> str:
         """根据文本猜测类别"""
-        food_keywords = ["美食", "餐厅", "好吃", "吃饭", "火锅", "咖啡", "甜品", "小吃", "面馆", "饭店"]
-        attraction_keywords = ["景点", "打卡", "拍照", "风景", "公园", "古镇", "博物馆", "寺庙", "湖", "山"]
-        shopping_keywords = ["购物", "商场", "市集", "买", "特产"]
+        food_keywords = ["美食", "餐厅", "好吃", "吃饭", "火锅", "咖啡", "甜品", "小吃", "面馆", "饭店", "烧烤", "奶茶"]
+        attraction_keywords = ["景点", "打卡", "拍照", "风景", "公园", "古镇", "博物馆", "寺庙", "湖", "山", "古城", "夜景"]
+        shopping_keywords = ["购物", "商场", "市集", "买", "特产", "步行街"]
         
         for kw in food_keywords:
             if kw in text:
