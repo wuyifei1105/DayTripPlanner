@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     # 小红书 Cookie（从浏览器 F12 获取登录后的 cookie）
     xhs_cookies: str = os.getenv("XHS_COOKIES", "")
     
+    # Chrome 配置 (可选，用于持久化登录)
+    chrome_user_data_dir: str = os.getenv("CHROME_USER_DATA_DIR", "")
+    chrome_executable_path: str = os.getenv("CHROME_EXECUTABLE_PATH", "")
+
     class Config:
         env_file = ".env"
 

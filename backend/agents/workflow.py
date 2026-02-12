@@ -36,7 +36,7 @@ async def xiaohongshu_node(state: TripPlannerState) -> TripPlannerState:
     messages = list(state.get("messages", []))
     places = list(state.get("places", []))
     
-    messages.append(f"🔍 正在通过 Spider_XHS 爬虫搜索: {location} 一日游推荐...")
+    messages.append(f"🔍 正在通过 XHS Browser 浏览器搜索: {location} 一日游推荐...")
     
     try:
         # 搜索景点和美食

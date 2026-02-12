@@ -77,9 +77,9 @@ DayTripPlanner/
 │   │   ├── workflow.py      # LangGraph工作流
 │   │   └── __init__.py
 │   ├── scrapers/
-│   │   ├── browser_manager.py    # 浏览器会话管理
-│   │   ├── xiaohongshu_scraper.py
-│   │   └── dianping_scraper.py
+│   │   ├── xhs_browser.py           # 浏览器自动化与会话管理
+│   │   ├── xiaohongshu_scraper.py   # 小红书业务抓取逻辑
+│   │   └── dianping_scraper.py      # 大众点评抓取逻辑 (简化版)
 │   ├── services/
 │   │   ├── llm_service.py   # NVIDIA NIM API
 │   │   └── amap_service.py  # 高德地图API
